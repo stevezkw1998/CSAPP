@@ -32,11 +32,21 @@ typedef struct {
     Set* sets;      // Every sets in a cache
 } Cache;
 
-void usage();                                                                 //usage - Print usage info
-int get_opt(int argc,char** argv,int* s,int* S,int* E,int* b,int* B,char* t,int* vebose); //get input parameters
+typedef struct {
+    int s;          // Number of set index bits
+    int E;          // Number of lines per set
+    int b;          // Number of block bits
+    int S;          // Number of sets
+    int B;          // Block size
+    int vebose;     // Verbose flag
+    char t[100];    // Trace file
+} Parameters;
+
+void usage();                                                         //usage - Print usage info
+Parameters get_opt(int argc,char** argv);                             //get input parameters
 void init_cache(int S, int E, int B, Cache* cache);
 int getTag(int address, int s, int b);
-int getSetIdx(int address, int s, int b);                                       //initialize cache
+int getSetIdx(int address, int s, int b);                             //initialize cache
 
 
 void loadData(Cache *cache,int address,int size,int setBits,int tagBits,int vebose,int *hit_count,int *miss_count,int *eviction_count);                                                        
@@ -49,48 +59,44 @@ void modifyData(Cache *cache,int address,int size,int setBits,int tagBits,int ve
 int main(int argc, char* argv[])
 {
     /* Locals set on the command line */
-    static int s = 0;   // Number of set index bits
-    static int E = 0;   // Number of lines per set
-    static int b = 0;   // Number of block bits
-    static int S = 0;   // Number of sets
-    static int B = 0;   // Block size
+    Parameters parameters;
     int hit_count = 0, miss_count = 0, eviction_count = 0;
-    int vebose = 0;     // Verbose flag
-    char t[100];        // Trace file
     char opt;           // Operation: denotes the type of memory access
     //char input[MAXSIZE]; /* Save string into line*/
 
     /*get operation and parameters from shell command*/
-    get_opt(argc,argv,&s,&S,&E,&b,&B,t,&vebose);
+    parameters = get_opt(argc,argv);
+    printf("Test strncpy\n");
+    printf("%s",parameters.t);
 
     /*initialize*/
     Cache cache;
-    init_cache(S,E,B,&cache);
+    init_cache(parameters.S,parameters.E,parameters.B,&cache);
 
     /*open trace file*/
-    FILE *tracefile = fopen(t, "r");
+    FILE *tracefile = fopen(parameters.t, "r");
     if (!tracefile) {
         printf("File open fail");
-        return 1;
+        exit(1);
     }
 
     //int clock = 0;
 
     int address, size;
     while (fscanf(tracefile,"%c %x,%d",&opt,&address,&size) != EOF) {
-        if (vebose == 1) printf("%c %x,%d ",opt,address,size);
+        if (parameters.vebose == 1) printf("%c %x,%d ",opt,address,size);
         if (opt=='I') continue;   /*ignore all instruction cache access*/
         //int access = 0;     //cache access number
-        int tagBits = getTag(address,s,b);
-        int setBits = getSetIdx(address,s,b);
+        int tagBits = getTag(address,parameters.s,parameters.b);
+        int setBits = getSetIdx(address,parameters.s,parameters.b);
         if (opt=='M') {
-            modifyData(&cache,address,size,setBits,tagBits,vebose,&hit_count,&miss_count,&eviction_count);
+            modifyData(&cache,address,size,setBits,tagBits,parameters.vebose,&hit_count,&miss_count,&eviction_count);
         } else if (opt=='L') {
-            loadData(&cache,address,size,setBits,tagBits,vebose,&hit_count,&miss_count,&eviction_count);
+            loadData(&cache,address,size,setBits,tagBits,parameters.vebose,&hit_count,&miss_count,&eviction_count);
         } else if (opt=='S') {
-            storeData(&cache,address,size,setBits,tagBits,vebose,&hit_count,&miss_count,&eviction_count);
+            storeData(&cache,address,size,setBits,tagBits,parameters.vebose,&hit_count,&miss_count,&eviction_count);
         }
-        if(vebose == 1) printf("\n");
+        if(parameters.vebose == 1) printf("\n");
     }
     printSummary(hit_count, miss_count, eviction_count);
     return 0;
@@ -107,26 +113,28 @@ void usage() {
     printf("  -t <tracefile> Name of the valgrind trace to replay\n");          
 }
 
-int get_opt(int argc, char** argv, int* s, int* S, int* E, int* b, int* B, char* t, int* vebose) {
+Parameters get_opt(int argc, char** argv) {
+    Parameters parameters;
     char c;
     while ((c = getopt(argc,argv,"hvs:E:b:t:")) != -1) {
         switch(c) {
         case 's':
-            *s = atoi(optarg);
-            *S = 1 << *s;
+            parameters.s = atoi(optarg);
+            parameters.S = 1 << parameters.s;
             break;
         case 'E':
-            *E = atoi(optarg);
+            parameters.E = atoi(optarg);
             break;
         case 'b':
-            *b = atoi(optarg);
-            *B = 1 << *b;
+            parameters.b = atoi(optarg);
+            parameters.B = 1 << parameters.b;
             break;
         case 't':
-            strncpy(t,optarg,100);
+            memset(parameters.t, '\0', sizeof(parameters.t));
+            strncpy(parameters.t,optarg,strlen(optarg));
             break;
         case 'v':
-            *vebose = 1;
+            parameters.vebose = 1;
             break;
         case 'h':
             usage();
@@ -136,17 +144,17 @@ int get_opt(int argc, char** argv, int* s, int* S, int* E, int* b, int* B, char*
             exit(1);
         }
     }
-    if (*s < 0) {
+    if (parameters.s < 0) {
         printf("invalid sets number");
         exit(0);
-    } else if (*E < 0) {
+    } else if (parameters.E < 0) {
         printf("invalid lines number");
         exit(0);
-    } else if (*b < 0) {
+    } else if (parameters.b < 0) {
         printf("invalid block bits number");
         exit(0);
     }
-    return 1;
+    return parameters;
 }
 
 void init_cache(int S, int E, int B, Cache* cache) {
